@@ -17,48 +17,46 @@ async fn main() {
     }
 
     println!("loaded {:?} servers", servers.len());
-    get_server_status();
+    for server in servers {
+        get_server_status(server.address);
+    }
 }
 
-fn get_server_status() -> std::io::Result<()> {
+fn get_server_status(address: String) -> std::io::Result<()> {
     let sock = UdpSocket::bind("0.0.0.0:0")?;
-    let remote_addr = "79.211.46.237:2103";
+
+    // increment port by 1
+    let mut iter = address.split(':');
+    let ip = iter.next().unwrap();
+    let port = iter.next().unwrap();
+    let query_port = port.parse::<u16>().unwrap() + 1;
+    let query_address = format!("{}:{}", ip, query_port);
+
     sock.set_read_timeout(Some(Duration::from_secs(1)));
-    sock.connect(remote_addr);
+    sock.connect(query_address);
 
     let mut buf = [0; 1024];
     sock.send("\\status\\".as_bytes());
     sock.recv(&mut buf);
     let binding = String::from_utf8_lossy(&buf);
-    let body = binding.trim_matches(char::from(0));
-    //println!("response: {:?}", body);
+    let mut body = binding.trim_matches(char::from(0));
+    println!("response: {:?}", body);
 
-    // sock.send("//status//").await?;
-    // let mut buf = [0; 1024];
-    // let len = sock.recv(&mut buf).await?;
-    // println!("{:?} bytes received from {:?}", len, remote_addr);
+    body = &body[1..body.len()];
+    let mut response_parts = body.split("\\");
 
-    let mut hash: HashMap<String, String> = HashMap::new();
-    let mut key = false;
+    let mut hash = HashMap::new();
 
-    let mut last_key = String::from("");
-    let mut last_value = String::from("");
-    for c in body.chars() {
-        if c == "\\".chars().next().unwrap() {
-            key = !key;
+    // trim first
+    loop {
+        let key = response_parts.next();
+        let value = response_parts.next();
 
-            if !key {
-                hash.insert(last_key.clone(), last_value.clone());
-                last_key = "".to_string();
-                last_value = "".to_string();
-            }
-        } else {
-            if key {
-                last_key.push(c);
-            } else {
-                last_value.push(c);
-            }
+        if key == None {
+            break;
         }
+
+        hash.insert(key.unwrap().clone(), value.unwrap().clone());
     }
 
     println!("{:?}", hash);
